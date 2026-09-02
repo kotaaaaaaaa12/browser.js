@@ -1,0 +1,47 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "browser-js",
+	"main": "src/index.js",
+	"compatibility_date": "2026-09-02",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"routes": [
+		{
+			"pattern": "browser.what-the-fuck.men",
+			"custom_domain": true
+		},
+		{
+			"pattern": "wisp.what-the-fuck.men",
+			"custom_domain": true
+		},
+		{
+			"pattern": "*.what-the-fuck.men/*",
+			"zone_name": "what-the-fuck.men"
+		}
+	],
+	"containers": [
+		{
+			"class_name": "BrowserContainer",
+			"image": "./Dockerfile",
+			"instance_type": "lite",
+			"max_instances": 1
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "BROWSER_CONTAINER",
+				"class_name": "BrowserContainer"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["BrowserContainer"]
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}
