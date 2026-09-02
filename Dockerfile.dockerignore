@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+.zed
+node_modules
+**/node_modules
+**/dist
+**/target
+external/playwright
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+browserjs-cloudflare-overlay.zip
+browserjs-cloudflare-fix-v2.zip

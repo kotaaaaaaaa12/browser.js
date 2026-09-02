@@ -72,7 +72,7 @@ ENV ISOLATION_ROOT=what-the-fuck.men
 WORKDIR /app
 
 COPY cloudflare/package.json ./package.json
-COPY cloudflare/runtime-package-lock.json ./package-lock.json
+COPY cloudflare/package-lock.json ./package-lock.json
 RUN npm ci --omit=dev --no-audit --no-fund \
 	&& npm cache clean --force
 

@@ -31,7 +31,7 @@ Connect the fork in **Workers & Pages**, then use:
 
 - Production branch: `main`
 - Root directory: `/`
-- Build command: leave empty
+- Build command: `true`
 - Deploy command: `pnpm deploy:cloudflare`
 
 The first container image build compiles the Rust/Wasm rewriter and can take a
