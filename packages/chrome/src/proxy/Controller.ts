@@ -67,12 +67,27 @@ export class Controller {
 				};
 
 				const fetchresp = await handlefetch(request, this);
+				let responseBody = fetchresp.body;
+
+				// WebKit can accept a transferred ReadableStream and still fail while
+				// relaying it through the cross-origin sandbox Service Worker. Images
+				// then stay blank without producing a useful page-level error. Buffer
+				// image responses before the MessagePort transfer so the Service Worker
+				// receives a plain, reliably transferable ArrayBuffer.
+				const contentType =
+					fetchresp.headers.get("content-type")?.toLowerCase() ?? "";
+				const shouldBufferImage =
+					data.destination === "image" || contentType.startsWith("image/");
+
+				if (responseBody instanceof ReadableStream && shouldBufferImage) {
+					responseBody = await new Response(responseBody).arrayBuffer();
+				}
 
 				const response: TransferResponse = {
 					status: fetchresp.status,
 					statusText: fetchresp.statusText,
 					headers: fetchresp.headers.toRawHeaders(),
-					body: fetchresp.body,
+					body: responseBody,
 				};
 
 				let transfer: Transferable[] = [];
