@@ -15,12 +15,32 @@ function isIsolationHostname(hostname) {
 export class BrowserContainer extends Container {
 	defaultPort = 8080;
 	sleepAfter = "10m";
+
 	envVars = {
 		BROWSER_HOST: browserHost,
 		WISP_HOST: wispHost,
 		ISOLATION_ROOT: rootDomain,
 		PORT: "8080",
 	};
+
+	onStart() {
+		console.log("Browser container started");
+	}
+
+	onStop(stopParams) {
+		console.log("Browser container stopped", {
+			exitCode: stopParams.exitCode,
+			reason: stopParams.reason,
+		});
+	}
+
+	async onActivityExpired() {
+		console.log(
+			"Browser container idle timeout expired; destroying instance",
+		);
+
+		await this.destroy();
+	}
 
 	onError(error) {
 		console.error("Container error", error);
@@ -47,6 +67,9 @@ export default {
 			return fetch(request);
 		}
 
-		return getContainer(env.BROWSER_CONTAINER, "shared").fetch(request);
+		return getContainer(
+			env.BROWSER_CONTAINER,
+			"shared",
+		).fetch(request);
 	},
 };
