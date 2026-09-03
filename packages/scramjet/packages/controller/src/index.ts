@@ -97,6 +97,41 @@ const COOKIE_STATE_KEY = "cookies";
 const BROADCASTCHANNEL_NAME = "__scramjet_controller_channel";
 
 let cookieDbPromise: Promise<IDBDatabase> | null = null;
+let transferableReadableStreamSupport: boolean | undefined;
+
+function supportsTransferableReadableStreams(): boolean {
+	if (transferableReadableStreamSupport !== undefined) {
+		return transferableReadableStreamSupport;
+	}
+
+	if (
+		typeof MessageChannel === "undefined" ||
+		typeof ReadableStream === "undefined"
+	) {
+		transferableReadableStreamSupport = false;
+		return transferableReadableStreamSupport;
+	}
+
+	const { port1, port2 } = new MessageChannel();
+
+	try {
+		const stream = new ReadableStream({
+			start(controller) {
+				controller.close();
+			},
+		});
+
+		port1.postMessage({ body: stream }, [stream]);
+		transferableReadableStreamSupport = true;
+	} catch {
+		transferableReadableStreamSupport = false;
+	} finally {
+		port1.close();
+		port2.close();
+	}
+
+	return transferableReadableStreamSupport;
+}
 
 function parsePersistedCookieState(
 	value: unknown
@@ -322,17 +357,25 @@ export class Controller {
 					cache: data.cache,
 					clientId: data.clientId,
 				});
+				let responseBody = fetchresponse.body;
+
+				if (
+					responseBody instanceof ReadableStream &&
+					!supportsTransferableReadableStreams()
+				) {
+					responseBody = await new Response(responseBody).arrayBuffer();
+				}
 
 				return [
 					{
-						body: fetchresponse.body,
+						body: responseBody,
 						status: fetchresponse.status,
 						statusText: fetchresponse.statusText,
 						headers: fetchresponse.headers.toRawHeaders(),
 					},
-					fetchresponse.body instanceof ReadableStream ||
-					fetchresponse.body instanceof ArrayBuffer
-						? [fetchresponse.body]
+					responseBody instanceof ReadableStream ||
+					responseBody instanceof ArrayBuffer
+						? [responseBody]
 						: [],
 				];
 			} catch (e) {
