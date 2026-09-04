@@ -35,15 +35,46 @@ export class BrowserContainer extends Container {
 	}
 
 	async onActivityExpired() {
-		console.log(
-			"Browser container idle timeout expired; destroying instance",
-		);
+		try {
+			const response = await this.containerFetch(
+				"http://localhost/_activity",
+			);
 
-		await this.destroy();
+			if (!response.ok) {
+				throw new Error(`Activity endpoint returned ${response.status}`);
+			}
+
+			const activity = await response.json();
+			const activeWispConnections = Number(
+				activity.activeWispConnections ?? 0,
+			);
+
+			if (activeWispConnections > 0) {
+				console.log(
+					"Browser container still has active Wisp connections",
+					{ activeWispConnections },
+				);
+				this.renewActivityTimeout();
+				return;
+			}
+		} catch (error) {
+			console.error(
+				"Failed to inspect browser container activity; keeping it alive",
+				error,
+			);
+			this.renewActivityTimeout();
+			return;
+		}
+
+		console.log(
+			"Browser container idle timeout expired with no active Wisp connections; stopping instance",
+		);
+		await this.stop();
 	}
 
 	onError(error) {
 		console.error("Container error", error);
+		throw error;
 	}
 }
 
@@ -67,9 +98,6 @@ export default {
 			return fetch(request);
 		}
 
-		return getContainer(
-			env.BROWSER_CONTAINER,
-			"shared",
-		).fetch(request);
+		return getContainer(env.BROWSER_CONTAINER, "shared").fetch(request);
 	},
 };

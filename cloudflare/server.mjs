@@ -5,13 +5,22 @@ import { extname, resolve, sep } from "node:path";
 import { server as wisp } from "@mercuryworkshop/wisp-js/server";
 
 const port = Number.parseInt(process.env.PORT ?? "8080", 10);
-const browserHost = (process.env.BROWSER_HOST ?? "browser.what-the-fuck.men").toLowerCase();
-const wispHost = (process.env.WISP_HOST ?? "wisp.what-the-fuck.men").toLowerCase();
-const isolationRoot = (process.env.ISOLATION_ROOT ?? "what-the-fuck.men").toLowerCase();
+const browserHost = (
+	process.env.BROWSER_HOST ?? "browser.what-the-fuck.men"
+).toLowerCase();
+const wispHost = (
+	process.env.WISP_HOST ?? "wisp.what-the-fuck.men"
+).toLowerCase();
+const isolationRoot = (
+	process.env.ISOLATION_ROOT ?? "what-the-fuck.men"
+).toLowerCase();
 const browserOrigin = `https://${browserHost}`;
 
 const browserRoot = resolve(process.env.BROWSER_ROOT ?? "./public/browser");
 const sandboxRoot = resolve(process.env.SANDBOX_ROOT ?? "./public/sandbox");
+
+let activeWispConnections = 0;
+let nextWispConnectionId = 1;
 
 wisp.options.allow_loopback_ips = false;
 wisp.options.allow_private_ips = false;
@@ -54,6 +63,17 @@ function sendText(response, statusCode, body, extraHeaders = {}) {
 		"Content-Type": "text/plain; charset=utf-8",
 		"X-Content-Type-Options": "nosniff",
 		...extraHeaders,
+	});
+	response.end(body);
+}
+
+function sendJson(response, statusCode, value) {
+	const body = JSON.stringify(value);
+	response.writeHead(statusCode, {
+		"Cache-Control": "no-store",
+		"Content-Length": String(Buffer.byteLength(body)),
+		"Content-Type": "application/json; charset=utf-8",
+		"X-Content-Type-Options": "nosniff",
 	});
 	response.end(body);
 }
@@ -121,8 +141,11 @@ async function serveStatic(request, response, root, options = {}) {
 	}
 
 	const extension = extname(file.path).toLowerCase();
-	const etag = `W/\"${file.stat.size.toString(16)}-${Math.trunc(file.stat.mtimeMs).toString(16)}\"`;
-	const isServiceWorker = file.path.endsWith("/sw.js") || file.path.endsWith("/controller.sw.js");
+	const etag = `W/"${file.stat.size.toString(16)}-${Math.trunc(
+		file.stat.mtimeMs,
+	).toString(16)}"`;
+	const isServiceWorker =
+		file.path.endsWith("/sw.js") || file.path.endsWith("/controller.sw.js");
 	const isHtml = extension === ".html";
 
 	if (request.headers["if-none-match"] === etag) {
@@ -132,11 +155,13 @@ async function serveStatic(request, response, root, options = {}) {
 	}
 
 	const headers = {
-		"Cache-Control": isHtml || isServiceWorker
-			? "no-cache"
-			: "public, max-age=31536000, immutable",
+		"Cache-Control":
+			isHtml || isServiceWorker
+				? "no-cache"
+				: "public, max-age=31536000, immutable",
 		"Content-Length": String(file.stat.size),
-		"Content-Type": mimeTypes.get(extension) ?? "application/octet-stream",
+		"Content-Type":
+			mimeTypes.get(extension) ?? "application/octet-stream",
 		ETag: etag,
 		"Referrer-Policy": "no-referrer",
 		"X-Content-Type-Options": "nosniff",
@@ -153,8 +178,11 @@ async function serveStatic(request, response, root, options = {}) {
 
 	const stream = createReadStream(file.path);
 	stream.on("error", () => {
-		if (!response.headersSent) sendText(response, 500, "Internal Server Error\n");
-		else response.destroy();
+		if (!response.headersSent) {
+			sendText(response, 500, "Internal Server Error\n");
+		} else {
+			response.destroy();
+		}
 	});
 	stream.pipe(response);
 }
@@ -162,20 +190,32 @@ async function serveStatic(request, response, root, options = {}) {
 const server = createServer((request, response) => {
 	void (async () => {
 		const hostname = getHostname(request);
-		const pathname = new URL(request.url ?? "/", "http://container.local").pathname;
+		const pathname = new URL(
+			request.url ?? "/",
+			"http://container.local",
+		).pathname;
 
 		if (pathname === "/_health") {
 			sendText(response, 200, "ok\n");
 			return;
 		}
 
+		if (pathname === "/_activity") {
+			sendJson(response, 200, { activeWispConnections });
+			return;
+		}
+
 		if (hostname === browserHost) {
-			await serveStatic(request, response, browserRoot, { spaFallback: true });
+			await serveStatic(request, response, browserRoot, {
+				spaFallback: true,
+			});
 			return;
 		}
 
 		if (hostname === wispHost) {
-			sendText(response, 426, "WebSocket endpoint\n", { Upgrade: "websocket" });
+			sendText(response, 426, "WebSocket endpoint\n", {
+				Upgrade: "websocket",
+			});
 			return;
 		}
 
@@ -187,8 +227,11 @@ const server = createServer((request, response) => {
 		sendText(response, 421, "Unknown Host\n");
 	})().catch((error) => {
 		console.error("Request failed", error);
-		if (!response.headersSent) sendText(response, 500, "Internal Server Error\n");
-		else response.destroy();
+		if (!response.headersSent) {
+			sendText(response, 500, "Internal Server Error\n");
+		} else {
+			response.destroy();
+		}
 	});
 });
 
@@ -202,7 +245,42 @@ server.on("upgrade", (request, socket, head) => {
 		return;
 	}
 
-	wisp.routeRequest(request, socket, head);
+	const connectionId = nextWispConnectionId;
+	nextWispConnectionId += 1;
+	activeWispConnections += 1;
+
+	socket.setKeepAlive(true, 30_000);
+	socket.setNoDelay(true);
+
+	console.log("Wisp connection opened", {
+		connectionId,
+		activeWispConnections,
+	});
+
+	let released = false;
+	const releaseConnection = () => {
+		if (released) return;
+		released = true;
+		activeWispConnections = Math.max(0, activeWispConnections - 1);
+		console.log("Wisp connection closed", {
+			connectionId,
+			activeWispConnections,
+		});
+	};
+
+	socket.once("close", releaseConnection);
+	socket.once("error", releaseConnection);
+
+	try {
+		wisp.routeRequest(request, socket, head);
+	} catch (error) {
+		releaseConnection();
+		console.error("Failed to route Wisp connection", {
+			connectionId,
+			error,
+		});
+		socket.destroy();
+	}
 });
 
 server.on("clientError", (_error, socket) => {
